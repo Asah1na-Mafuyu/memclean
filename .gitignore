@@ -1,0 +1,31 @@
+# Generated builds, release packages and local validation output
+/build/
+/build-*/
+/cmake-build-*/
+/dist/
+/out/
+/work/
+*.exe
+*.dll
+*.lib
+*.obj
+*.pdb
+*.ilk
+*.zip
+*.7z
+
+# Local editor and CMake configuration
+/.vs/
+/.vscode/
+/CMakeUserPresets.json
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
+
+# Machine-local files
+Thumbs.db
+Desktop.ini
+.DS_Store
+.env
+.env.*
