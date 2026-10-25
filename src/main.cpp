@@ -1,4 +1,5 @@
 #include "core.h"
+#include "task_manager.h"
 #include <commctrl.h>
 #include <shellapi.h>
 #include <algorithm>
@@ -29,7 +30,8 @@ enum Id {
     Tip,
     Status,
     SelectAll,
-    SelectNone
+    SelectNone,
+    TaskManager
 };
 const COLORREF kBackground = RGB(245, 247, 250), kInk = RGB(28, 43, 57), kMuted = RGB(88, 106, 121);
 const COLORREF kAccent = RGB(0, 104, 93);
@@ -100,6 +102,7 @@ class Application {
         Place(Total, 30, 161, w - 60, 25);
         Place(Foreground, 30, 200, w - 60, 26);
         if (!advanced_) {
+            Place(TaskManager, w - 240, 27, 210, 36);
             Place(Refresh, 30, 239, 112, 34);
             Place(SelectAll, 152, 239, 118, 34);
             Place(SelectNone, 280, 239, 110, 34);
@@ -364,6 +367,7 @@ class Application {
         SendMessageW(log_, EM_SETLIMITTEXT, 220000, 0);
         if (!advanced_) {
             Add(L"BUTTON", L"刷新列表", WS_TABSTOP | BS_PUSHBUTTON, Refresh);
+            Add(L"BUTTON", L"打开任务管理器…", WS_TABSTOP | BS_PUSHBUTTON, TaskManager);
             Add(L"BUTTON", L"选择可清理项", WS_TABSTOP | BS_PUSHBUTTON, SelectAll);
             Add(L"BUTTON", L"取消勾选", WS_TABSTOP | BS_PUSHBUTTON, SelectNone);
             Add(L"BUTTON", L"高级全局清理…", WS_TABSTOP | BS_PUSHBUTTON, Advanced);
@@ -580,6 +584,21 @@ public:
                 if (!busy_ && !inspecting_)
                     Elevate();
                 return 0;
+            case TaskManager: {
+                auto path = mc::ExecutablePath();
+                SHELLEXECUTEINFOW info{};
+                info.cbSize = sizeof(info);
+                info.hwnd = window_;
+                info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI;
+                info.lpFile = path.c_str();
+                info.lpParameters = L"--taskmgr";
+                info.nShow = SW_SHOWNORMAL;
+                if (!ShellExecuteExW(&info))
+                    AppendLog(L"无法打开任务管理器：" + mc::WinError(GetLastError()));
+                else if (info.hProcess)
+                    CloseHandle(info.hProcess);
+                return 0;
+            }
             case SelectAll:
             case SelectNone:
                 if (!busy_ && !inspecting_) {
@@ -668,23 +687,31 @@ public:
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-    INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_LISTVIEW_CLASSES | ICC_STANDARD_CLASSES};
+    INITCOMMONCONTROLSEX controls{sizeof(controls),
+                                  ICC_LISTVIEW_CLASSES | ICC_STANDARD_CLASSES | ICC_TAB_CLASSES};
     InitCommonControlsEx(&controls);
     int count = 0;
     wchar_t** arguments = CommandLineToArgvW(GetCommandLineW(), &count);
-    bool advanced = false, valid = arguments && count == 1;
+    bool advanced = false, taskManager = false, valid = arguments && count == 1;
     if (arguments && count == 2 && wcscmp(arguments[1], L"--advanced") == 0) {
         advanced = true;
+        valid = true;
+    }
+    if (arguments && count == 2 && wcscmp(arguments[1], L"--taskmgr") == 0) {
+        taskManager = true;
         valid = true;
     }
     if (arguments)
         LocalFree(arguments);
     if (!valid) {
-        MessageBoxW(nullptr, L"支持的选项只有 --advanced（仅打开高级窗口，不执行清理）。", L"memclean",
-                    MB_OK | MB_ICONINFORMATION);
+        MessageBoxW(nullptr,
+                    L"支持 --advanced（高级清理窗口）和 --taskmgr（任务管理器窗口）。打开窗口不会自动清理。",
+                    L"memclean", MB_OK | MB_ICONINFORMATION);
         return 2;
     }
     try {
+        if (taskManager)
+            return mc::task::RunWindow(instance);
         Application application(instance, advanced);
         gApplication = &application;
         if (!application.Create()) {

@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <cstdint>
+#include <string>
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     if (message == WM_DESTROY) {
@@ -12,13 +13,29 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     int count = 0;
     wchar_t** args = CommandLineToArgvW(GetCommandLineW(), &count);
-    if (!args || count != 3) {
+    if (!args || (count != 3 && count != 5)) {
         if (args)
             LocalFree(args);
         return 2;
     }
     HANDLE ready = OpenEventW(EVENT_MODIFY_STATE, FALSE, args[1]);
     HANDLE stop = OpenEventW(SYNCHRONIZE, FALSE, args[2]);
+    HANDLE childStop = nullptr, childProcess = nullptr;
+    if (count == 5) {
+        childStop = OpenEventW(EVENT_MODIFY_STATE, FALSE, args[4]);
+        std::wstring command =
+            L"\"" + std::wstring(args[0]) + L"\" \"" + args[3] + L"\" \"" + args[4] + L"\"";
+        STARTUPINFOW startup{};
+        startup.cb = sizeof(startup);
+        startup.dwFlags = STARTF_USESHOWWINDOW;
+        startup.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION process{};
+        if (CreateProcessW(args[0], command.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup,
+                           &process)) {
+            childProcess = process.hProcess;
+            CloseHandle(process.hThread);
+        }
+    }
     LocalFree(args);
     if (!ready || !stop) {
         if (ready)
@@ -74,5 +91,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     DestroyWindow(window);
     CloseHandle(stop);
     CloseHandle(ready);
+    if (childStop) {
+        SetEvent(childStop);
+        CloseHandle(childStop);
+    }
+    if (childProcess) {
+        WaitForSingleObject(childProcess, 5000);
+        CloseHandle(childProcess);
+    }
     return intact ? 0 : 6;
 }

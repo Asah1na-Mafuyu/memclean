@@ -1,9 +1,11 @@
 #include <windows.h>
+#include <commctrl.h>
+#pragma code_page(65001)
 1 ICON "app.ico"
 1 RT_MANIFEST "app.manifest"
 1 VERSIONINFO
-FILEVERSION 1,0,0,0
-PRODUCTVERSION 1,0,0,0
+FILEVERSION 2,0,0,0
+PRODUCTVERSION 2,0,0,0
 FILEFLAGSMASK 0x3fL
 FILEFLAGS 0x0L
 FILEOS VOS_NT_WINDOWS32
@@ -13,16 +15,51 @@ BEGIN
   BEGIN
     BLOCK "040904b0"
     BEGIN
-      VALUE "FileDescription", "memclean - Manual Memory Cleaner\0"
-      VALUE "FileVersion", "1.0.0\0"
+      VALUE "FileDescription", "memclean - Memory Cleaner and Task Manager\0"
+      VALUE "FileVersion", "2.0.0\0"
       VALUE "InternalName", "memclean\0"
       VALUE "OriginalFilename", "memclean.exe\0"
       VALUE "ProductName", "memclean\0"
-      VALUE "ProductVersion", "1.0.0\0"
+      VALUE "ProductVersion", "2.0.0\0"
     END
   END
   BLOCK "VarFileInfo"
   BEGIN
     VALUE "Translation", 0x409, 1200
   END
+END
+
+2000 DIALOGEX 0, 0, 400, 108
+STYLE DS_MODALFRAME | DS_SETFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "运行新任务"
+FONT 9, "Microsoft YaHei UI"
+BEGIN
+    LTEXT "输入程序和参数，例如 notepad.exe；程序使用此窗口的权限运行。", -1, 12, 12, 376, 22
+    EDITTEXT 2101, 12, 38, 316, 16, ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON "浏览…", 2102, 334, 37, 54, 18
+    DEFPUSHBUTTON "运行", IDOK, 268, 76, 56, 20
+    PUSHBUTTON "取消", IDCANCEL, 332, 76, 56, 20
+END
+
+2001 DIALOGEX 0, 0, 500, 290
+STYLE DS_MODALFRAME | DS_SETFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "详情"
+FONT 9, "Microsoft YaHei UI"
+BEGIN
+    EDITTEXT 2101, 10, 10, 480, 240, ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_VSCROLL | WS_TABSTOP
+    LTEXT "可以选择文本并按 Ctrl+C 复制。", -1, 12, 263, 300, 14
+    DEFPUSHBUTTON "关闭", IDOK, 430, 260, 60, 20
+END
+
+2002 DIALOGEX 0, 0, 260, 290
+STYLE DS_MODALFRAME | DS_SETFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "CPU 关联性"
+FONT 9, "Microsoft YaHei UI"
+BEGIN
+    LTEXT "选择允许此进程使用的逻辑处理器。", -1, 12, 12, 236, 16
+    CONTROL "", 2103, "SysListView32", LVS_REPORT | LVS_NOCOLUMNHEADER | WS_BORDER | WS_TABSTOP, 12, 34, 236, 190
+    PUSHBUTTON "全选", 2104, 12, 230, 54, 18
+    PUSHBUTTON "清空", 2105, 74, 230, 54, 18
+    DEFPUSHBUTTON "应用", IDOK, 128, 260, 56, 20
+    PUSHBUTTON "取消", IDCANCEL, 192, 260, 56, 20
 END

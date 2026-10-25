@@ -15,6 +15,7 @@ public static class memcleanUi {
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassNameW(IntPtr hwnd, StringBuilder value, int size);
     [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr hwnd, int id);
     [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern IntPtr SendMessageW(IntPtr hwnd, uint message, IntPtr wp, IntPtr lp);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessageW(IntPtr hwnd, uint message, IntPtr wp, StringBuilder lp);
     [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr hwnd, uint message, IntPtr wp, IntPtr lp);
@@ -23,15 +24,19 @@ public static class memcleanUi {
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hwnd, IntPtr insert, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
     [StructLayout(LayoutKind.Sequential)] public struct Rect { public int left, top, right, bottom; }
-    public static IntPtr Find(uint processId) {
+    public static IntPtr Find(uint processId, string className = "memclean.Main.v1") {
         IntPtr found = IntPtr.Zero;
-        EnumWindows((hwnd, p) => { uint pid; GetWindowThreadProcessId(hwnd, out pid); if(pid == processId) { var name = new StringBuilder(100); GetClassNameW(hwnd, name, name.Capacity); if(name.ToString() == "memclean.Main.v1") { found = hwnd; return false; } } return true; }, IntPtr.Zero);
+        EnumWindows((hwnd, p) => { uint pid; GetWindowThreadProcessId(hwnd, out pid); if(pid == processId) { var name = new StringBuilder(100); GetClassNameW(hwnd, name, name.Capacity); if(name.ToString() == className) { found = hwnd; return false; } } return true; }, IntPtr.Zero);
         return found;
     }
     public static string Text(IntPtr hwnd) {
         var text = new StringBuilder(100000);
         SendMessageW(hwnd, 0x000D, (IntPtr)text.Capacity, text);
         return text.ToString();
+    }
+    public static bool SetText(IntPtr hwnd, string text) {
+        // Cross-process edit controls need WM_SETTEXT; SetWindowText only updates their cached caption.
+        return SendMessageW(hwnd, 0x000C, IntPtr.Zero, new StringBuilder(text)).ToInt64() != 0;
     }
 }
 '@
@@ -112,4 +117,88 @@ foreach ($mode in @('normal', 'advanced')) {
         $process.Dispose()
     }
 }
-Write-Output "ALL $uiChecks UI checks passed. No user processes or global caches were cleaned."
+function Wait-TaskReady([IntPtr]$Window) {
+    $refresh = [memcleanUi]::GetDlgItem($Window, 1002)
+    for ($attempt = 0; $attempt -lt 200 -and -not [memcleanUi]::IsWindowEnabled($refresh); $attempt++) { Start-Sleep -Milliseconds 100 }
+    Assert-Ui ([memcleanUi]::IsWindowEnabled($refresh)) 'task manager background sample completed'
+}
+$taskProcess = Start-Process -FilePath $ExePath -ArgumentList '--taskmgr' -WindowStyle Hidden -PassThru
+$taskWindow = [IntPtr]::Zero
+try {
+    for ($attempt = 0; $attempt -lt 100; $attempt++) {
+        $taskWindow = [memcleanUi]::Find($taskProcess.Id, 'memclean.TaskManager.v1')
+        if ($taskWindow -ne [IntPtr]::Zero -and [memcleanUi]::GetDlgItem($taskWindow, 1002) -ne [IntPtr]::Zero) { break }
+        Start-Sleep -Milliseconds 100
+    }
+    Assert-Ui ($taskWindow -ne [IntPtr]::Zero) 'task manager opens through command-line entry'
+    Wait-TaskReady $taskWindow
+    $taskList = [memcleanUi]::GetDlgItem($taskWindow, 1100)
+    $taskTabs = [memcleanUi]::GetDlgItem($taskWindow, 1000)
+    $taskSearch = [memcleanUi]::GetDlgItem($taskWindow, 1001)
+    Assert-Ui ((Send-Ui $taskTabs 0x1304) -eq 7) 'seven task manager pages available'
+    for ($attempt = 0; $attempt -lt 100 -and (Send-Ui $taskList 0x1004) -eq 0; $attempt++) { Start-Sleep -Milliseconds 100 }
+    if ((Send-Ui $taskList 0x1004) -eq 0) { Write-Output ([memcleanUi]::Text([memcleanUi]::GetDlgItem($taskWindow, 1012))) }
+    Assert-Ui ((Send-Ui $taskList 0x1004) -gt 0) 'task manager process table populated'
+    Assert-Ui (-not [memcleanUi]::IsWindowEnabled([memcleanUi]::GetDlgItem($taskWindow, 1008))) 'no process action without selection'
+    [void](Send-Ui ([memcleanUi]::GetDlgItem($taskWindow, 1004)) 0x00F5)
+    Assert-Ui ([memcleanUi]::SetText($taskSearch, '__memclean_nonexistent_process_test__')) 'search accepts text'
+    for ($attempt = 0; $attempt -lt 30 -and (Send-Ui $taskList 0x1004) -ne 0; $attempt++) { Start-Sleep -Milliseconds 100 }
+    Assert-Ui ((Send-Ui $taskList 0x1004) -eq 0) 'search excludes nonmatching processes'
+    [void][memcleanUi]::SetText($taskSearch, 'memclean.exe')
+    Assert-Ui ((Send-Ui $taskList 0x1004) -ge 1) 'search finds task manager itself'
+    [void](Send-Ui $taskList 0x0100 0x24)
+    Assert-Ui (-not [memcleanUi]::IsWindowEnabled([memcleanUi]::GetDlgItem($taskWindow, 1008))) 'self process end action disabled'
+    [void][memcleanUi]::PostMessageW($taskWindow, 0x0111, [IntPtr]1009, [IntPtr]::Zero)
+    $detailsDialog = [IntPtr]::Zero
+    for ($attempt = 0; $attempt -lt 50; $attempt++) {
+        $detailsDialog = [memcleanUi]::Find($taskProcess.Id, '#32770')
+        if ($detailsDialog -ne [IntPtr]::Zero) { break }
+        Start-Sleep -Milliseconds 100
+    }
+    Assert-Ui ($detailsDialog -ne [IntPtr]::Zero) 'process details dialog opens'
+    $detailsText = [memcleanUi]::Text([memcleanUi]::GetDlgItem($detailsDialog, 2101))
+    Assert-Ui ($detailsText.Contains('memclean.exe')) 'process details show executable information'
+    [void][memcleanUi]::PostMessageW($detailsDialog, 0x0111, [IntPtr]1, [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 100
+    [void][memcleanUi]::SetText($taskSearch, '')
+    Save-Window $taskWindow 'task-processes.png'
+    $expectedColumns = @{ 2 = 12; 3 = 5; 4 = 7; 5 = 6; 6 = 6 }
+    foreach ($tabIndex in @(2,3,4,5,6,1)) {
+        # TCM_SETCURFOCUS updates selection and notifies the parent like keyboard navigation.
+        [void](Send-Ui $taskTabs 0x1330 $tabIndex)
+        Wait-TaskReady $taskWindow
+        Assert-Ui ((Send-Ui $taskTabs 0x130B) -eq $tabIndex) "task manager page $tabIndex selected"
+        if ($tabIndex -eq 1) {
+            Assert-Ui ([memcleanUi]::IsWindowVisible([memcleanUi]::GetDlgItem($taskWindow, 1014))) 'performance graph panel visible'
+            Save-Window $taskWindow 'task-performance.png'
+        } else {
+            $header = [IntPtr](Send-Ui $taskList 0x101F)
+            Assert-Ui ((Send-Ui $header 0x1200) -eq $expectedColumns[$tabIndex]) "page $tabIndex has its own columns"
+            if ($tabIndex -in @(2,4,5,6)) { Assert-Ui ((Send-Ui $taskList 0x1004) -gt 0) "page $tabIndex contains live data" }
+            if ($tabIndex -eq 3) { Save-Window $taskWindow 'task-startup.png' }
+            if ($tabIndex -eq 5) { Save-Window $taskWindow 'task-services.png' }
+        }
+    }
+    [void][memcleanUi]::PostMessageW($taskWindow, 0x0111, [IntPtr]1006, [IntPtr]::Zero)
+    $runDialog = [IntPtr]::Zero
+    for ($attempt = 0; $attempt -lt 50; $attempt++) {
+        $runDialog = [memcleanUi]::Find($taskProcess.Id, '#32770')
+        if ($runDialog -ne [IntPtr]::Zero) { break }
+        Start-Sleep -Milliseconds 100
+    }
+    Assert-Ui ($runDialog -ne [IntPtr]::Zero) 'run-new-task dialog opens without launching a command'
+    [void][memcleanUi]::PostMessageW($runDialog, 0x0111, [IntPtr]2, [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 100
+    [void][memcleanUi]::PostMessageW($taskWindow, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+    Assert-Ui ($taskProcess.WaitForExit(10000)) 'task manager closes normally'
+    Assert-Ui ($taskProcess.ExitCode -eq 0) 'task manager successful exit'
+} finally {
+    if (-not $taskProcess.HasExited -and $taskWindow -ne [IntPtr]::Zero) {
+        $dialog = [memcleanUi]::Find($taskProcess.Id, '#32770')
+        if ($dialog -ne [IntPtr]::Zero) { [void][memcleanUi]::PostMessageW($dialog, 0x0111, [IntPtr]2, [IntPtr]::Zero) }
+        [void][memcleanUi]::PostMessageW($taskWindow, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+        [void]$taskProcess.WaitForExit(10000)
+    }
+    $taskProcess.Dispose()
+}
+Write-Output "ALL $uiChecks UI checks passed. No user processes, services, startup items or global caches were changed."
