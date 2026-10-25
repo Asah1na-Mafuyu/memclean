@@ -35,8 +35,9 @@ ctest --test-dir build -C Release --output-on-failure
 ## 测试范围
 
 - `tests/core_tests.cpp` 验证保护策略、身份变化、取消、互斥和统计边界，并通过真实 Windows API 回收隔离进程的工作集。
+- `tests/task_tests.cpp` 验证计数器差分、首次有效历史基线、CSV 转义、进程身份保护，以及隔离进程的优先级、关联性、正常关闭、强制结束和进程树结束。启动项复制 / 恢复测试使用 `HKCU\Software\memclean\Tests\<唯一后缀>`，不写真实 Run 键。
 - `tests/fixture.cpp` 创建带离屏窗口的测试进程，申请 128 MB 内存；回收后逐页验证内容并正常退出。前台锚点使用不同路径的同一测试程序，避免误命中同路径保护。
-- `tests/ui_smoke.ps1` 检查窗口、列表、默认选项和退出流程；测试窗口放在可视桌面之外，不点击清理或提权按钮。截图仅保存在被 Git 忽略的 `work/`。
+- `tests/ui_smoke.ps1` 检查清理窗口、任务管理器七页、搜索、保护按钮、详情 / 新任务对话框、默认选项和退出流程；测试窗口放在可视桌面之外，不点击清理、提权或系统修改按钮。截图仅保存在被 Git 忽略的 `work/`。
 
 单独运行界面测试：
 
@@ -46,11 +47,12 @@ ctest --test-dir build -C Release --output-on-failure
 
 可以通过 `-ExePath` 指定待测 EXE，通过 `-ScreenshotDirectory` 指定截图目录。构建脚本在独立 PowerShell 进程中启动界面测试，避免重复运行时 `Add-Type` 类型重定义。
 
-实际测试不会回收用户正在使用的应用，也不会实际清理全局缓存。管理员全局操作需要在专用测试环境中另外验证。详见 [验证记录](VALIDATION.md)。
+实际测试不会修改用户正在使用的应用、真实服务、登录会话或启动项，也不会实际清理全局缓存。需要管理员权限的成功路径应在专用测试环境中另外验证。详见 [验证记录](VALIDATION.md)。
 
 ## 代码约定
 
 - `src/core.h` 定义核心数据和接口，`src/core.cpp` 实现 Windows 操作，`src/main.cpp` 实现 Win32 界面。
+- `src/task_manager.h` 定义任务管理接口；`task_sampling`、`task_actions`、`task_system`、`task_startup` 分别负责采样、进程操作、服务 / 会话和启动项；`task_window` / `task_dialogs` 负责界面。详细模块说明见 [TASK_MANAGER.md](TASK_MANAGER.md)。
 - 资源位于 `resources/`，版本号在 `CMakeLists.txt`、`app.rc` 和 `app.manifest` 中保持一致。
 - C++17，UTF-8，LF 换行，4 空格缩进；按仓库 `.clang-format` 格式化。
 - `.editorconfig` 和 `.gitattributes` 统一编辑器与 Git 的文本格式。
@@ -59,7 +61,8 @@ ctest --test-dir build -C Release --output-on-failure
 如果 clang-format 已加入 PATH：
 
 ```powershell
-clang-format -i src/core.h src/core.cpp src/main.cpp tests/core_tests.cpp tests/fixture.cpp
+$sources = Get-ChildItem src, tests -File | Where-Object Extension -in '.cpp', '.h'
+clang-format -i $sources.FullName
 ```
 
 ## 提交与分发

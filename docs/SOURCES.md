@@ -40,3 +40,16 @@
 - [WinMemoryCleaner 进程排除与清理实现](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs)
 
 这些项目的代码具有各自的许可证。本项目没有捆绑其源码或二进制。
+
+## 任务管理器使用的 Windows 文档
+
+2.0 的任务管理器采用独立的 C++ / Win32 实现，没有引入其他任务管理工具的代码或内核驱动。主要依据：
+
+- [PdhAddEnglishCounterW：使用语言无关的英文计数器路径](https://learn.microsoft.com/en-us/windows/win32/api/pdh/nf-pdh-pdhaddenglishcounterw)
+- [PdhGetFormattedCounterArrayW：读取通配计数器实例](https://learn.microsoft.com/en-us/windows/win32/api/pdh/nf-pdh-pdhgetformattedcounterarrayw)
+- [SetPriorityClass：进程调度优先级](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setpriorityclass)
+- [EnumServicesStatusExW：服务状态枚举](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-enumservicesstatusexw)
+- [WTSEnumerateSessionsW：用户会话枚举](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsenumeratesessionsw)
+- [Run / RunOnce 注册表键](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)
+
+计数器值、接口权限和兼容性仍由当前 Windows 决定。对于系统任务管理器未公开的启动状态格式，本项目没有推断二进制格式后直接改写；只对公开 Run 配置进行原始值备份、校验和恢复。功能边界见 [TASK_MANAGER.md](TASK_MANAGER.md)。

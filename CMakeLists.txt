@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(memclean VERSION 1.0.0 LANGUAGES CXX RC)
+project(memclean VERSION 2.0.0 LANGUAGES CXX RC)
 
 if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     message(FATAL_ERROR "memclean requires Windows x64.")
@@ -29,9 +29,19 @@ target_compile_definitions(memclean_core PUBLIC PSAPI_VERSION=2)
 target_link_libraries(memclean_core PUBLIC advapi32 psapi user32)
 memclean_compile_options(memclean_core)
 
-add_executable(memclean WIN32 src/main.cpp resources/app.rc)
+add_library(memclean_tasks STATIC
+    src/task_manager.h
+    src/task_sampling.cpp
+    src/task_actions.cpp
+    src/task_system.cpp
+    src/task_startup.cpp
+)
+target_link_libraries(memclean_tasks PUBLIC memclean_core pdh iphlpapi wtsapi32 shell32 ole32)
+memclean_compile_options(memclean_tasks)
+
+add_executable(memclean WIN32 src/main.cpp src/task_window.cpp src/task_dialogs.cpp src/task_dialogs.h resources/app.rc)
 target_include_directories(memclean PRIVATE resources)
-target_link_libraries(memclean PRIVATE memclean_core comctl32 shell32 gdi32)
+target_link_libraries(memclean PRIVATE memclean_tasks comctl32 shell32 gdi32 comdlg32)
 memclean_compile_options(memclean)
 if(MSVC)
     # The resource file embeds the asInvoker manifest and Common Controls v6.
@@ -70,4 +80,16 @@ if(BUILD_TESTING)
         $<TARGET_FILE_DIR:memclean_fixture>/memclean_foreground_fixture.exe
     )
     set_tests_properties(safety_and_isolated_working_set PROPERTIES TIMEOUT 60)
+
+    add_executable(memclean_task_tests tests/task_tests.cpp)
+    target_link_libraries(memclean_task_tests PRIVATE memclean_tasks)
+    memclean_compile_options(memclean_task_tests)
+    add_dependencies(memclean_task_tests memclean_fixture)
+    if(MSVC)
+        target_link_options(memclean_task_tests PRIVATE /guard:cf)
+    else()
+        target_link_options(memclean_task_tests PRIVATE -municode -static)
+    endif()
+    add_test(NAME task_manager_safety_and_actions COMMAND memclean_task_tests $<TARGET_FILE:memclean_fixture>)
+    set_tests_properties(task_manager_safety_and_actions PROPERTIES TIMEOUT 90)
 endif()
